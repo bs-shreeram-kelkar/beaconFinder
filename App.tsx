@@ -7,7 +7,27 @@ import { createStackNavigator } from '@react-navigation/stack';
 const Stack = createStackNavigator();
 const bleManager = new BleManager();
 
-const WelcomeScreen = ({ navigation }) => {
+// Define beacon coordinates
+const BEACONS = {
+  'A': {
+    uuid: '72:49:48:89:53:F6',
+    // uuid: '6D:0F:A6:61:B0:44',
+    txPower: -59, 
+    coordinates: {x: 0, y: 0}
+  },
+  'B': {
+    uuid: 'E0:9D:13:86:9C:E9',
+    txPower: -59,
+    coordinates: {x: 5, y: 0}
+  },
+  'C': {
+    uuid: '8C:59:DC:FD:32:57',
+    txPower: -59,
+    coordinates: {x: 0, y: 5}
+  }
+};
+
+const WelcomeScreen = ({ navigation }: { navigation: any }) => {
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
       const granted = await PermissionsAndroid.requestMultiple([
@@ -34,58 +54,23 @@ const WelcomeScreen = ({ navigation }) => {
   );
 };
 
-const DeviceListScreen = ({ navigation }) => {
-  const [devices, setDevices] = useState([]);
+interface Device {
+  id: string;
+  name: string;
+  rssi: number;
+  txPower: number;
+  distance: number;
+  coordinates?: {x: number, y: number};
+}
+
+const DeviceListScreen = ({ navigation }: { navigation: any }) => {
+  const [devices, setDevices] = useState<Device[]>([]);
   const [manager] = useState(bleManager);
   const [isScanning, setIsScanning] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(null);
+  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  const [currentPosition, setCurrentPosition] = useState<{x: number, y: number} | null>(null);
 
-  const startScan = () => {
-    manager.startDeviceScan(null, null, (error, device) => {
-      if (error) {
-        console.warn(error);
-        return;
-      }
-
-      if (device) {
-        const major = device.manufacturerData ? parseInt(device.manufacturerData.substr(18, 4), 16) : null;
-        const minor = device.manufacturerData ? parseInt(device.manufacturerData.substr(22, 4), 16) : null;
-
-        // Only process device if major is 80 and minor is 120
-        if (major === 80 && minor === 120) {
-          const distance = calculateDistance(device.rssi);
-          const txPower = device.txPowerLevel || -59;
-          
-          setDevices(prevDevices => {
-            const existingDeviceIndex = prevDevices.findIndex(d => d.id === device.id);
-            if (existingDeviceIndex === -1) {
-              return [...prevDevices, {
-                id: device.id,
-                name: device.name || 'Unknown',
-                rssi: device.rssi,
-                txPower: txPower,
-                distance: distance,
-                major: major,
-                minor: minor
-              }];
-            } else {
-              const updatedDevices = [...prevDevices];
-              updatedDevices[existingDeviceIndex] = {
-                ...updatedDevices[existingDeviceIndex],
-                rssi: device.rssi,
-                txPower: txPower,
-                distance: distance
-              };
-              return updatedDevices;
-            }
-          });
-        }
-      }
-    });
-  };
-
-  const calculateDistance = (rssi) => {
-    const txPower = -59; // Calibrated transmission power at 1 meter
+  const calculateDistance = (rssi: number, txPower: number): number => {
     if (rssi === 0) {
       return -1.0;
     }
@@ -96,14 +81,102 @@ const DeviceListScreen = ({ navigation }) => {
     return 0.89976 * Math.pow(ratio, 7.7095) + 0.111;
   };
 
+  const calculatePosition = (distances: {[key: string]: number}) => {
+    // Trilateration calculation
+    // Using least squares method to solve the system of equations
+    
+    const beaconA = BEACONS.A.coordinates;
+    const beaconB = BEACONS.B.coordinates;
+    const beaconC = BEACONS.C.coordinates;
+    
+    const dA = distances['A'] || 0;
+    const dB = distances['B'] || 0;
+    const dC = distances['C'] || 0;
+
+    // Form the matrices for least squares solution
+    const A = [
+      [2*(beaconB.x - beaconA.x), 2*(beaconB.y - beaconA.y)],
+      [2*(beaconC.x - beaconA.x), 2*(beaconC.y - beaconA.y)]
+    ];
+
+    const b = [
+      [Math.pow(dA, 2) - Math.pow(dB, 2) - Math.pow(beaconA.x, 2) + Math.pow(beaconB.x, 2) - Math.pow(beaconA.y, 2) + Math.pow(beaconB.y, 2)],
+      [Math.pow(dA, 2) - Math.pow(dC, 2) - Math.pow(beaconA.x, 2) + Math.pow(beaconC.x, 2) - Math.pow(beaconA.y, 2) + Math.pow(beaconC.y, 2)]
+    ];
+
+    // Solve using matrix operations
+    const det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
+    if (Math.abs(det) < 0.0001) return null;
+
+    const x = (A[1][1] * b[0][0] - A[0][1] * b[1][0]) / det;
+    const y = (-A[1][0] * b[0][0] + A[0][0] * b[1][0]) / det;
+
+    return {x, y};
+  };
+
+  const startScan = () => {
+    manager.startDeviceScan(null, null, (error, device) => {
+      if (error) {
+        console.warn(error);
+        return;
+      }
+
+      if (device) {
+        // Find matching beacon
+        const matchingBeacon = Object.entries(BEACONS).find(([_, beacon]) => 
+          beacon.uuid === device.id
+        );
+
+        if (matchingBeacon) {
+          const [beaconId, beacon] = matchingBeacon;
+          const distance = calculateDistance(device.rssi || 0, beacon.txPower);
+          
+          setDevices(prevDevices => {
+            const existingDeviceIndex = prevDevices.findIndex(d => d.id === device.id);
+            const newDevice = {
+              id: device.id,
+              name: device.name || `Beacon ${beaconId}`,
+              rssi: device.rssi || 0,
+              txPower: beacon.txPower,
+              distance: distance
+            };
+
+            if (existingDeviceIndex === -1) {
+              return [...prevDevices, newDevice];
+            } else {
+              const updatedDevices = [...prevDevices];
+              updatedDevices[existingDeviceIndex] = newDevice;
+              return updatedDevices;
+            }
+          });
+
+          // Calculate position if we have distances to all beacons
+          const distances: {[key: string]: number} = {};
+          devices.forEach(device => {
+            const beaconId = Object.entries(BEACONS).find(([_, b]) => b.uuid === device.id)?.[0];
+            if (beaconId) {
+              distances[beaconId] = device.distance;
+            }
+          });
+
+          if (Object.keys(distances).length >= 3) {
+            const position = calculatePosition(distances);
+            if (position) {
+              setCurrentPosition(position);
+            }
+          }
+        }
+      }
+    });
+  };
+
   const startRefresh = () => {
     setIsScanning(true);
     startScan();
     const interval = setInterval(() => {
-      // Instead of clearing devices, we'll let them update in place
       manager.stopDeviceScan();
       startScan();
-    }, 5000);
+    }, 500);
     setRefreshInterval(interval);
   };
 
@@ -125,21 +198,32 @@ const DeviceListScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Discovered Bluetooth Devices:</Text>
+      <Text style={styles.header}>Device Position</Text>
+      <View style={styles.mapContainer}>
+        <Text style={styles.beaconText}>Beacon A (0,0)</Text>
+        <Text style={styles.beaconText}>Beacon B (5,0)</Text>
+        <Text style={styles.beaconText}>Beacon C (0,5)</Text>
+        {currentPosition && (
+          <View style={styles.positionContainer}>
+            <Text style={styles.positionText}>
+              Current Position: ({currentPosition.x.toFixed(2)}, {currentPosition.y.toFixed(2)}) meters
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.subHeader}>Discovered Beacons:</Text>
       <ScrollView style={styles.deviceList}>
-        {devices.map((device, index) => (
+        {devices.map((device) => (
           <View key={device.id} style={styles.deviceContainer}>
             <Text style={styles.deviceText}>ID: {device.id}</Text>
             <Text style={styles.deviceText}>Name: {device.name}</Text>
             <Text style={styles.deviceText}>RSSI: {device.rssi} dBm</Text>
             <Text style={styles.deviceText}>Measured Power (Tx): {device.txPower} dBm</Text>
             <Text style={styles.deviceText}>Distance: {device.distance.toFixed(2)} meters</Text>
-            <Text style={styles.deviceText}>Major: {device.major}</Text>
-            <Text style={styles.deviceText}>Minor: {device.minor}</Text>
           </View>
         ))}
         {devices.length === 0 && (
-          <Text style={styles.noDevicesText}>Scanning for devices...</Text>
+          <Text style={styles.noDevicesText}>Scanning for beacons...</Text>
         )}
       </ScrollView>
       <View style={styles.buttonContainer}>
@@ -153,7 +237,7 @@ const DeviceListScreen = ({ navigation }) => {
   );
 };
 
-const DeviceDetailsScreen = ({ route }) => {
+const DeviceDetailsScreen = ({ route }: { route: any }) => {
   const { device } = route.params;
 
   return (
@@ -164,8 +248,6 @@ const DeviceDetailsScreen = ({ route }) => {
       <Text>RSSI: {device.rssi} dBm</Text>
       <Text>Measured Power (Tx): {device.txPower} dBm</Text>
       <Text>Distance: {device.distance.toFixed(2)} meters</Text>
-      <Text>Major: {device.major}</Text>
-      <Text>Minor: {device.minor}</Text>
     </SafeAreaView>
   );
 };
@@ -223,6 +305,17 @@ const styles = StyleSheet.create({
   buttonContainer: {
     marginTop: 10,
     marginBottom: 20,
+  },
+  positionContainer: {
+    backgroundColor: '#e6f3ff',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  positionText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   }
 });
 
