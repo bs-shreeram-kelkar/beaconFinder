@@ -10,19 +10,31 @@ const bleManager = new BleManager();
 // Define beacon coordinates
 const BEACONS = {
   'A': {
-    uuid: '72:49:48:89:53:F6',
+    uuid: '8C:64:A2:30:E6:06', // one plus buds kishan
+    // uuid: '08:12:87:21:E3:B3', // one plus buds shreeram
+    // uuid: '04:57:91:7B:58:01', // someone mouse
+    // uuid: 'ED:6B:FF:EB:BF:3F',
+    // uuid: '72:49:48:89:53:F6',
     // uuid: '6D:0F:A6:61:B0:44',
-    txPower: -59, 
+    // uuid: 'A0:D0:5B:3B:5C:77',
+    // uuid: 'E4:49:7C:77:52:00', // shreeram beacon
+    // uuid: '34:F0:43:CD:B9:B8', // swapnil beacon
+    // uuid: 'D0:49:7C:77:52:00', // kavita beacon
+    // uuid: '43:30:06:1C:41:F8', // link s kishan beacon
+    txPower: -72, 
     coordinates: {x: 0, y: 0}
   },
   'B': {
-    uuid: 'E0:9D:13:86:9C:E9',
-    txPower: -59,
+    uuid: '08:12:87:21:E3:B3',
+    // uuid: 'E0:9D:13:86:9C:E9', // beacon B
+    txPower: -72,
     coordinates: {x: 5, y: 0}
   },
   'C': {
-    uuid: '8C:59:DC:FD:32:57',
-    txPower: -59,
+    // uuid: 'D0:49:7C:77:52:00',
+    uuid: '49:85:8A:67:15:D5', // kavita bud
+    // uuid: '8C:59:DC:FD:32:57', // lock
+    txPower: -72,
     coordinates: {x: 0, y: 5}
   }
 };
@@ -176,7 +188,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const interval = setInterval(() => {
       manager.stopDeviceScan();
       startScan();
-    }, 500);
+    }, 5000);
     setRefreshInterval(interval);
   };
 
