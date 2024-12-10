@@ -11,7 +11,7 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
             const granted = await PermissionsAndroid.requestMultiple([
               PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
               PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
             ]);
             const allGranted = Object.values(granted).every(
               (status) => status === PermissionsAndroid.RESULTS.GRANTED
