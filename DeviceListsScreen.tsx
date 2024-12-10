@@ -11,6 +11,13 @@ interface Device {
     coordinates?: { x: number, y: number };
 }
 
+interface KalmanFilter {
+    x: number; // estimated value
+    p: number; // estimation error covariance
+    q: number; // process noise covariance
+    r: number; // measurement noise covariance
+}
+
 const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const bleManager = new BleManager();
 
@@ -23,15 +30,16 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             txPower: -59,
             coordinates: { x: 0, y: 0 }
         },
-        'B': {
-            uuid: '08:12:87:21:E3:B3',
-            txPower: -59,
-            coordinates: { x: 5, y: 0 }
-        },
         'C': {
-            uuid: 'B0:A3:F2:35:6F:A2',
+            uuid: '08:12:87:21:E3:B3', // shreeram buds
+            // uuid: 'D0:49:7C:77:52:00', //altBeacon,
             txPower: -59,
-            coordinates: { x: 0, y: 5 }
+            coordinates: { x: 0, y: 3.31 }
+        },
+        'B': {
+            uuid: '6B:96:94:E6:F8:8B',
+            txPower: -59,
+            coordinates: { x: 4.011, y: 0 }
         }
     };
 
@@ -40,8 +48,33 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const [isScanning, setIsScanning] = useState(true);
     const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
     const [currentPosition, setCurrentPosition] = useState<{ x: number, y: number } | null>(null);
-    const rssiBuffer: { [key: string]: number[] } = {};
+    const [kalmanFilters] = useState<{ [key: string]: KalmanFilter }>({});
 
+    const initKalmanFilter = (deviceId: string) => {
+        if (!kalmanFilters[deviceId]) {
+            kalmanFilters[deviceId] = {
+                x: -60, // Initial estimate (typical RSSI value)
+                p: 1, // Initial estimate error covariance
+                q: 0.1, // Process noise
+                r: 1 // Measurement noise
+            };
+        }
+    };
+
+    const updateKalmanFilter = (deviceId: string, measurement: number): number => {
+        initKalmanFilter(deviceId);
+        const filter = kalmanFilters[deviceId];
+
+        // Prediction
+        const p = filter.p + filter.q;
+
+        // Update
+        const k = p / (p + filter.r); // Kalman gain
+        filter.x = filter.x + k * (measurement - filter.x);
+        filter.p = (1 - k) * p;
+
+        return filter.x;
+    };
 
     const calculateDistance = (rssi: number, txPower: number): number => {
         if (rssi === 0 || txPower === 0 || rssi > 0) {
@@ -54,16 +87,6 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             return Math.pow(ratio, 10);
         }
         return 0.89976 * Math.pow(ratio, 7.7095) + 0.111;
-    };
-
-    const calculateAverageRssi = (id: string, newRssi: number): number => {
-        const buffer = rssiBuffer[id] || [];
-        if (buffer.length >= 5) {
-            buffer.shift();
-        }
-        buffer.push(newRssi);
-        rssiBuffer[id] = buffer;
-        return buffer.reduce((sum, val) => sum + val, 0) / buffer.length;
     };
 
     const calculatePosition = (distances: { [key: string]: number }) => {
@@ -114,15 +137,15 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
 
                 if (matchingBeacon) {
                     const [beaconId, beacon] = matchingBeacon;
-                    const smoothedRssi = calculateAverageRssi(device.id, device.rssi || 0);
-                    const distance = calculateDistance(smoothedRssi, beacon.txPower);
+                    const filteredRssi = updateKalmanFilter(device.id, device.rssi || 0);
+                    const distance = calculateDistance(filteredRssi, beacon.txPower);
 
                     setDevices(prevDevices => {
                         const existingDeviceIndex = prevDevices.findIndex(d => d.id === device.id);
                         const newDevice = {
                             id: device.id,
                             name: device.name || `Beacon ${beaconId}`,
-                            rssi: device.rssi || 0,
+                            rssi: filteredRssi,
                             txPower: beacon.txPower,
                             distance: distance
                         };
@@ -162,7 +185,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         const interval = setInterval(() => {
             manager.stopDeviceScan();
             startScan();
-        }, 500);
+        }, 5000);
         setRefreshInterval(interval);
     };
 
