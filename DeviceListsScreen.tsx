@@ -30,16 +30,26 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             txPower: -59,
             coordinates: { x: 0, y: 0 }
         },
-        'C': {
-            uuid: '08:12:87:21:E3:B3', // shreeram buds
+        'B': {
+            uuid: 'F0:70:4F:4B:3D:C7', // TV back
             // uuid: 'D0:49:7C:77:52:00', //altBeacon,
             txPower: -59,
-            coordinates: { x: 0, y: 3.31 }
+            coordinates: { x: -3.33, y: -3.31 }
         },
-        'B': {
-            uuid: '6B:96:94:E6:F8:8B',
+        'C': {
+            uuid: '72:1E:78:93:D8:2C', // iphone beacon
             txPower: -59,
             coordinates: { x: 4.011, y: 0 }
+        },
+        'D': {
+            uuid: 'A0:D0:5B:3B:5C:77', // tv front
+            txPower: -59,
+            coordinates: { x: 3.011, y: 3.01 }
+        },
+        'E': {
+            uuid: '64:6B:E7:02:8E:2F', // divya iphone beacon
+            txPower: -59,
+            coordinates: { x: -13.011, y: -3.0111 }
         }
     };
 
