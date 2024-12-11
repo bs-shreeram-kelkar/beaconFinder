@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Button, SafeAreaView, ScrollView, StyleSheet, Text, View, processColor } from "react-native";
 import { BleManager } from "react-native-ble-plx";
+import { ScatterChart } from 'react-native-charts-wrapper';
 
 interface Device {
     id: string;
@@ -31,25 +32,16 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             coordinates: { x: 0, y: 0 }
         },
         'B': {
-            uuid: 'F0:70:4F:4B:3D:C7', // TV back
+            uuid: '70:25:64:4D:95:6D',
+            // uuid: 'F0:70:4F:4B:3D:C7', // TV back
             // uuid: 'D0:49:7C:77:52:00', //altBeacon,
             txPower: -59,
-            coordinates: { x: -3.33, y: -3.31 }
+            coordinates: { x: 2.5, y: 2.5 }
         },
         'C': {
-            uuid: '72:1E:78:93:D8:2C', // iphone beacon
+            uuid: '49:2A:2C:58:B7:29', // iphone beacon
             txPower: -59,
-            coordinates: { x: 4.011, y: 0 }
-        },
-        'D': {
-            uuid: 'A0:D0:5B:3B:5C:77', // tv front
-            txPower: -59,
-            coordinates: { x: 3.011, y: 3.01 }
-        },
-        'E': {
-            uuid: '64:6B:E7:02:8E:2F', // divya iphone beacon
-            txPower: -59,
-            coordinates: { x: -13.011, y: -3.0111 }
+            coordinates: { x: 2.5, y: 0 }
         }
     };
 
@@ -59,6 +51,44 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
     const [currentPosition, setCurrentPosition] = useState<{ x: number, y: number } | null>(null);
     const [kalmanFilters] = useState<{ [key: string]: KalmanFilter }>({});
+
+    const getBeaconPoints = () => {
+        const dataSets = [];
+
+        // Add beacon points
+        dataSets.push({
+            label: "Beacons",
+            values: Object.entries(BEACONS).map(([_, beacon]) => ({
+                x: beacon.coordinates.x,
+                y: beacon.coordinates.y
+            })),
+            config: {
+                color: processColor('blue'),
+                scatterShape: 'CIRCLE',
+                scatterShapeSize: 8,
+                drawValues: false,
+            }
+        });
+
+        // Add current position point if it exists
+        if (currentPosition) {
+            dataSets.push({
+                label: "Current Position",
+                values: [{
+                    x: currentPosition.x,
+                    y: currentPosition.y
+                }],
+                config: {
+                    color: processColor('red'),
+                    scatterShape: 'SQUARE',
+                    scatterShapeSize: 12,
+                    drawValues: false,
+                }
+            });
+        }
+
+        return { dataSets };
+    };
 
     const initKalmanFilter = (deviceId: string) => {
         if (!kalmanFilters[deviceId]) {
@@ -189,6 +219,21 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         });
     };
 
+    const refreshPosition = () => {
+        const distances: { [key: string]: number } = {};
+        devices.forEach(device => {
+            const beaconId = Object.entries(BEACONS).find(([_, b]) => b.uuid === device.id)?.[0];
+            if (beaconId) {
+                distances[beaconId] = device.distance;
+            }
+        });
+
+        const position = calculatePosition(distances);
+        if (position) {
+            setCurrentPosition(position);
+        }
+    }
+
     const startRefresh = () => {
         setIsScanning(true);
         startScan();
@@ -218,17 +263,37 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     return (
         <SafeAreaView style={styles.container}>
             <Text style={styles.header}>Device Position</Text>
-            <View>
-                <Text>Beacon A (0,0)</Text>
-                <Text>Beacon B (5,0)</Text>
-                <Text>Beacon C (0,5)</Text>
-                {currentPosition && (
-                    <View style={styles.positionContainer}>
-                        <Text style={styles.positionText}>
-                            Current Position: ({currentPosition.x.toFixed(2)}, {currentPosition.y.toFixed(2)}) meters
-                        </Text>
-                    </View>
-                )}
+            <View style={styles.chartContainer}>
+                <ScatterChart
+                    style={styles.chart}
+                    data={getBeaconPoints()}
+                    xAxis={{
+                        axisMinimum: -15,
+                        axisMaximum: 15,
+                        granularity: 1
+                    }}
+                    yAxis={{
+                        left: {
+                            axisMinimum: -15,
+                            axisMaximum: 15,
+                            granularity: 1
+                        },
+                        right: {
+                            enabled: false
+                        }
+                    }}
+                    legend={{
+                        enabled: true,
+                        textSize: 14,
+                        form: 'CIRCLE',
+                        formSize: 14,
+                        xEntrySpace: 10,
+                        yEntrySpace: 5,
+                        formToTextSpace: 5,
+                        wordWrapEnabled: true,
+                        maxSizePercent: 0.5,
+                    }}
+                />
             </View>
             <Text>Discovered Beacons:</Text>
             <ScrollView style={styles.deviceList}>
@@ -247,9 +312,9 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             </ScrollView>
             <View style={styles.buttonContainer}>
                 {!isScanning ? (
-                    <Button title="Start Refresh" onPress={startRefresh} />
+                    <Button title="Refresh Position" onPress={refreshPosition} />
                 ) : (
-                    <Button title="Stop Refresh" onPress={stopRefresh} />
+                    <Button title="Refresh Position" onPress={refreshPosition} />
                 )}
             </View>
         </SafeAreaView>
@@ -294,6 +359,13 @@ const styles = StyleSheet.create({
     buttonContainer: {
         marginTop: 10,
         marginBottom: 20,
+    },
+    chartContainer: {
+        height: 300,
+        marginVertical: 10,
+    },
+    chart: {
+        flex: 1,
     },
     positionContainer: {
         backgroundColor: '#e6f3ff',
