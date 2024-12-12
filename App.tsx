@@ -3,6 +3,7 @@ import { View, Text, Button, SafeAreaView, ScrollView, StyleSheet, Platform, Per
 import { BleManager } from 'react-native-ble-plx';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
 const Stack = createStackNavigator();
 const bleManager = new BleManager();
@@ -21,8 +22,15 @@ const WelcomeScreen = ({ navigation }) => {
       } else {
         console.warn('Bluetooth permissions not granted');
       }
-    } else {
-      navigation.navigate('DeviceList');
+    } else if (Platform.OS === 'ios') {
+      const bluetoothResult = await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
+      const locationResult = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
+      
+      if (bluetoothResult === RESULTS.GRANTED && locationResult === RESULTS.GRANTED) {
+        navigation.navigate('DeviceList');
+      } else {
+        console.warn('Bluetooth or Location permissions not granted');
+      }
     }
   };
 
