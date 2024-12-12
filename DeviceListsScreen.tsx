@@ -11,6 +11,8 @@ interface Device {
     txPower: number;
     distance: number;
     coordinates?: { x: number, y: number };
+    distanceBuffer: number[]; // Add buffer for distance readings
+    lastUpdateTime: number; // Track last update time
 }
 
 interface KalmanFilter {
@@ -43,6 +45,9 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             coordinates: { x: 2.5, y: 0 }
         }
     };
+
+    const BUFFER_SIZE = 5; // Number of readings to buffer
+    const UPDATE_INTERVAL = 2000; // Minimum time between updates in ms
 
     const [devices, setDevices] = useState<Device[]>([]);
     const [manager] = useState(bleManager);
@@ -145,12 +150,18 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         const MAX_DISTANCE = 20.0;
         correctedDistance = Math.max(MIN_DISTANCE, Math.min(correctedDistance, MAX_DISTANCE));
 
-        // Apply exponential smoothing for more stable readings
-        const SMOOTHING_FACTOR = 0.3;
-        const lastDistance = distance; // You might want to store this per device
-        correctedDistance = (SMOOTHING_FACTOR * correctedDistance) + ((1 - SMOOTHING_FACTOR) * lastDistance);
-
         return correctedDistance;
+    };
+
+    const calculateAverageDistance = (distances: number[]): number => {
+        // Remove outliers using interquartile range
+        const sorted = [...distances].sort((a, b) => a - b);
+        const q1 = sorted[Math.floor(sorted.length / 4)];
+        const q3 = sorted[Math.floor(3 * sorted.length / 4)];
+        const iqr = q3 - q1;
+        const validDistances = distances.filter(d => d >= q1 - 1.5 * iqr && d <= q3 + 1.5 * iqr);
+        
+        return validDistances.reduce((a, b) => a + b, 0) / validDistances.length;
     };
 
     const calculatePosition = (distances: { [key: string]: number }) => {
@@ -202,21 +213,46 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                 if (matchingBeacon) {
                     const [beaconId, beacon] = matchingBeacon;
                     const filteredRssi = updateKalmanFilter(device.id, device.rssi || 0);
-                    const distance = calculateDistance(filteredRssi, beacon.txPower);
+                    const currentDistance = calculateDistance(filteredRssi, beacon.txPower);
+                    const now = Date.now();
 
                     setDevices(prevDevices => {
                         const existingDeviceIndex = prevDevices.findIndex(d => d.id === device.id);
-                        const newDevice = {
-                            id: device.id,
-                            name: device.name || `Beacon ${beaconId}`,
-                            rssi: filteredRssi,
-                            txPower: beacon.txPower,
-                            distance: distance
-                        };
+                        let newDevice: Device;
 
                         if (existingDeviceIndex === -1) {
+                            // New device
+                            newDevice = {
+                                id: device.id,
+                                name: device.name || `Beacon ${beaconId}`,
+                                rssi: filteredRssi,
+                                txPower: beacon.txPower,
+                                distance: currentDistance,
+                                distanceBuffer: [currentDistance],
+                                lastUpdateTime: now
+                            };
                             return [...prevDevices, newDevice];
                         } else {
+                            // Existing device
+                            const existingDevice = prevDevices[existingDeviceIndex];
+                            const updatedBuffer = [...existingDevice.distanceBuffer, currentDistance]
+                                .slice(-BUFFER_SIZE);
+                            
+                            // Only update distance if enough time has passed and buffer is full
+                            const shouldUpdateDistance = 
+                                now - existingDevice.lastUpdateTime >= UPDATE_INTERVAL && 
+                                updatedBuffer.length >= BUFFER_SIZE;
+
+                            newDevice = {
+                                ...existingDevice,
+                                rssi: filteredRssi,
+                                distanceBuffer: updatedBuffer,
+                                distance: shouldUpdateDistance ? 
+                                    calculateAverageDistance(updatedBuffer) : 
+                                    existingDevice.distance,
+                                lastUpdateTime: shouldUpdateDistance ? now : existingDevice.lastUpdateTime
+                            };
+
                             const updatedDevices = [...prevDevices];
                             updatedDevices[existingDeviceIndex] = newDevice;
                             return updatedDevices;
