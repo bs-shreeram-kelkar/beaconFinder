@@ -116,16 +116,41 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     };
 
     const calculateDistance = (rssi: number, txPower: number): number => {
-        if (rssi === 0 || txPower === 0 || rssi > 0) {
-            // Ignore unrealistic values
+        // Ignore invalid RSSI values
+        if (rssi === 0 || rssi > 0) {
             return -1.0;
         }
 
-        const ratio = rssi / txPower;
-        if (ratio < 1.0) {
-            return Math.pow(ratio, 10);
+        // Environmental factor (n) varies based on environment
+        // 2.0 for free space
+        // 2.5-3.0 for indoor office
+        // 3.0-3.5 for indoor with obstacles
+        const n = 2.5;
+
+        // Calculate distance using Log-distance path loss model
+        // d = 10^((|RSSI| - |txPower|)/(10 * n))
+        const distance = Math.pow(10, (Math.abs(rssi) - Math.abs(txPower)) / (10 * n));
+
+        // Apply distance correction factors
+        let correctedDistance = distance;
+
+        // Signal strength based correction
+        if (rssi < -85) {
+            // Weak signals are less reliable, increase uncertainty
+            correctedDistance *= 1.2;
         }
-        return 0.89976 * Math.pow(ratio, 7.7095) + 0.111;
+
+        // Apply minimum and maximum thresholds
+        const MIN_DISTANCE = 0.1;
+        const MAX_DISTANCE = 20.0;
+        correctedDistance = Math.max(MIN_DISTANCE, Math.min(correctedDistance, MAX_DISTANCE));
+
+        // Apply exponential smoothing for more stable readings
+        const SMOOTHING_FACTOR = 0.3;
+        const lastDistance = distance; // You might want to store this per device
+        correctedDistance = (SMOOTHING_FACTOR * correctedDistance) + ((1 - SMOOTHING_FACTOR) * lastDistance);
+
+        return correctedDistance;
     };
 
     const calculatePosition = (distances: { [key: string]: number }) => {
