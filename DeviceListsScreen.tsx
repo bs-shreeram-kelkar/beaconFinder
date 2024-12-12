@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, View, processColor } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import { ScatterChart } from 'react-native-charts-wrapper';
+import { MMKV } from 'react-native-mmkv';
 
 interface Device {
     id: string;
@@ -21,25 +22,23 @@ interface KalmanFilter {
 
 const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const bleManager = new BleManager();
+    const storage = new MMKV();
 
     // Define beacon coordinates
     const BEACONS = {
         // BS beacon
         'A': {
-            uuid: '7C:87:CE:2F:D5:B2',
-            // uuid: '6D:0F:A6:61:B0:44',
+            uuid: storage.getString('uuid-a') || '7C:87:CE:2F:D5:B2',
             txPower: -59,
             coordinates: { x: 0, y: 0 }
         },
         'B': {
-            uuid: '4E:E8:76:77:33:45',
-            // uuid: 'F0:70:4F:4B:3D:C7', // TV back
-            // uuid: 'D0:49:7C:77:52:00', //altBeacon,
+            uuid: storage.getString('uuid-b') || '4E:E8:76:77:33:45',
             txPower: -59,
             coordinates: { x: 2.5, y: 2.5 }
         },
         'C': {
-            uuid: '49:2A:2C:58:B7:29', // iphone beacon
+            uuid: storage.getString('uuid-c') || '49:2A:2C:58:B7:29',
             txPower: -59,
             coordinates: { x: 2.5, y: 0 }
         }
