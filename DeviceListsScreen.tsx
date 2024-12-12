@@ -11,8 +11,12 @@ interface Device {
     txPower: number;
     distance: number;
     coordinates?: { x: number, y: number };
-    distanceBuffer: number[]; // Add buffer for distance readings
-    lastUpdateTime: number; // Track last update time
+    distanceBuffer: number[];
+    lastUpdateTime: number;
+    // Add raw distance buffer for smoothing
+    rawDistanceBuffer: number[];
+    // Add stabilized distance
+    stabilizedDistance: number;
 }
 
 interface KalmanFilter {
@@ -47,7 +51,9 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     };
 
     const BUFFER_SIZE = 5; // Number of readings to buffer
+    const RAW_BUFFER_SIZE = 10; // Size of raw distance buffer for smoothing
     const UPDATE_INTERVAL = 2000; // Minimum time between updates in ms
+    const ALPHA = 0.2; // Low-pass filter coefficient (0-1)
 
     const [devices, setDevices] = useState<Device[]>([]);
     const [manager] = useState(bleManager);
@@ -153,6 +159,23 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         return correctedDistance;
     };
 
+    const applyLowPassFilter = (newValue: number, oldValue: number): number => {
+        return ALPHA * newValue + (1 - ALPHA) * oldValue;
+    };
+
+    const calculateSmoothedDistance = (rawDistances: number[]): number => {
+        if (rawDistances.length === 0) return 0;
+        
+        // Apply moving average
+        const movingAvg = rawDistances.reduce((sum, val) => sum + val, 0) / rawDistances.length;
+        
+        // Apply low-pass filter using the last smoothed value if available
+        const lastSmoothedValue = rawDistances[rawDistances.length - 1];
+        const smoothedValue = applyLowPassFilter(movingAvg, lastSmoothedValue);
+        
+        return smoothedValue;
+    };
+
     const calculateAverageDistance = (distances: number[]): number => {
         // Remove outliers using interquartile range
         const sorted = [...distances].sort((a, b) => a - b);
@@ -229,13 +252,18 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                                 txPower: beacon.txPower,
                                 distance: currentDistance,
                                 distanceBuffer: [currentDistance],
-                                lastUpdateTime: now
+                                rawDistanceBuffer: [currentDistance],
+                                lastUpdateTime: now,
+                                stabilizedDistance: currentDistance
                             };
                             return [...prevDevices, newDevice];
                         } else {
                             // Existing device
                             const existingDevice = prevDevices[existingDeviceIndex];
-                            const updatedBuffer = [...existingDevice.distanceBuffer, currentDistance]
+                            const updatedRawBuffer = [...existingDevice.rawDistanceBuffer, currentDistance]
+                                .slice(-RAW_BUFFER_SIZE);
+                            const smoothedDistance = calculateSmoothedDistance(updatedRawBuffer);
+                            const updatedBuffer = [...existingDevice.distanceBuffer, smoothedDistance]
                                 .slice(-BUFFER_SIZE);
                             
                             // Only update distance if enough time has passed and buffer is full
@@ -243,13 +271,17 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                                 now - existingDevice.lastUpdateTime >= UPDATE_INTERVAL && 
                                 updatedBuffer.length >= BUFFER_SIZE;
 
+                            const averageDistance = shouldUpdateDistance ? 
+                                calculateAverageDistance(updatedBuffer) : 
+                                existingDevice.distance;
+
                             newDevice = {
                                 ...existingDevice,
                                 rssi: filteredRssi,
                                 distanceBuffer: updatedBuffer,
-                                distance: shouldUpdateDistance ? 
-                                    calculateAverageDistance(updatedBuffer) : 
-                                    existingDevice.distance,
+                                rawDistanceBuffer: updatedRawBuffer,
+                                distance: currentDistance, // Keep current distance for display
+                                stabilizedDistance: averageDistance, // Store stabilized distance
                                 lastUpdateTime: shouldUpdateDistance ? now : existingDevice.lastUpdateTime
                             };
 
@@ -259,12 +291,12 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                         }
                     });
 
-                    // Calculate position if we have distances to all beacons
+                    // Calculate position using stabilized distances
                     const distances: { [key: string]: number } = {};
                     devices.forEach(device => {
                         const beaconId = Object.entries(BEACONS).find(([_, b]) => b.uuid === device.id)?.[0];
                         if (beaconId) {
-                            distances[beaconId] = device.distance;
+                            distances[beaconId] = device.stabilizedDistance; // Use stabilized distance instead of current
                         }
                     });
 
@@ -284,7 +316,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         devices.forEach(device => {
             const beaconId = Object.entries(BEACONS).find(([_, b]) => b.uuid === device.id)?.[0];
             if (beaconId) {
-                distances[beaconId] = device.distance;
+                distances[beaconId] = device.stabilizedDistance; // Use stabilized distance here too
             }
         });
 
@@ -364,6 +396,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                         <Text style={styles.deviceText}>RSSI: {device.rssi} dBm</Text>
                         <Text style={styles.deviceText}>Measured Power (Tx): {device.txPower} dBm</Text>
                         <Text style={styles.deviceText}>Distance: {device.distance.toFixed(2)} meters</Text>
+                        <Text style={styles.deviceText}>Stabilized Distance: {device.stabilizedDistance.toFixed(2)} meters</Text>
                     </View>
                 ))}
                 {devices.length === 0 && (
