@@ -32,7 +32,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             coordinates: { x: 0, y: 0 }
         },
         'B': {
-            uuid: '70:25:64:4D:95:6D',
+            uuid: '4E:E8:76:77:33:45',
             // uuid: 'F0:70:4F:4B:3D:C7', // TV back
             // uuid: 'D0:49:7C:77:52:00', //altBeacon,
             txPower: -59,
