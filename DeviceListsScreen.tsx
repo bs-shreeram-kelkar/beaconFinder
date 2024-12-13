@@ -61,6 +61,7 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
     const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
     const [currentPosition, setCurrentPosition] = useState<{ x: number, y: number } | null>(null);
     const [kalmanFilters] = useState<{ [key: string]: KalmanFilter }>({});
+    const [positionUpdateInterval, setPositionUpdateInterval] = useState<NodeJS.Timeout | null>(null);
 
     const getBeaconPoints = () => {
         const dataSets = [];
@@ -290,22 +291,6 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
                             return updatedDevices;
                         }
                     });
-
-                    // Calculate position using stabilized distances
-                    const distances: { [key: string]: number } = {};
-                    devices.forEach(device => {
-                        const beaconId = Object.entries(BEACONS).find(([_, b]) => b.uuid === device.id)?.[0];
-                        if (beaconId) {
-                            distances[beaconId] = device.stabilizedDistance; // Use stabilized distance instead of current
-                        }
-                    });
-
-                    if (Object.keys(distances).length >= 3) {
-                        const position = calculatePosition(distances);
-                        if (position) {
-                            setCurrentPosition(position);
-                        }
-                    }
                 }
             }
         });
@@ -334,6 +319,10 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
             startScan();
         }, 5000);
         setRefreshInterval(interval);
+
+        // Start position update interval
+        const posInterval = setInterval(refreshPosition, 2000);
+        setPositionUpdateInterval(posInterval);
     };
 
     const stopRefresh = () => {
@@ -341,6 +330,10 @@ const DeviceListScreen = ({ navigation }: { navigation: any }) => {
         if (refreshInterval) {
             clearInterval(refreshInterval);
             setRefreshInterval(null);
+        }
+        if (positionUpdateInterval) {
+            clearInterval(positionUpdateInterval);
+            setPositionUpdateInterval(null);
         }
         manager.stopDeviceScan();
     };
