@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text, Button, SafeAreaView, StyleSheet, PermissionsAndroid, Platform } from 'react-native';
+import { PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 
 const WelcomeScreen = ({ navigation }: { navigation: any }) => {
     const requestPermissions = async () => {
@@ -34,7 +35,13 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
           }
         } else {
           // For iOS
-          navigation.navigate('DeviceList');
+          request(PERMISSIONS.IOS.BLUETOOTH).then((status) => {
+            if(status === RESULTS.GRANTED){
+              navigation.navigate('DeviceList');
+            }else{
+              console.warn('Bluetooth permissions not granted');
+            }
+          });
         }
       };
       
