@@ -1,5 +1,5 @@
 // BLEManager.js
-import { BleManager } from 'react-native-ble-plx';
+import { BleManager, ScanMode } from 'react-native-ble-plx';
 import { useEffect, useState } from 'react';
 
 const BLEManager = () => {
@@ -9,15 +9,22 @@ const BLEManager = () => {
     useEffect(() => {
         const subscription = manager.onStateChange((state) => {
             if (state === 'PoweredOn') {
-                manager.startDeviceScan(null, null, (error, device) => {
-                    if (error) {
-                        console.error(error);
-                        return;
+                manager.startDeviceScan(
+                    null,
+                    {
+                        allowDuplicates: true,
+                        scanMode: ScanMode.LowLatency,
+                    },
+                    (error, device) => {
+                        if (error) {
+                            console.error(error);
+                            return;
+                        }
+                        if (device) {
+                            setDevices((prevDevices) => [...prevDevices, device]);
+                        }
                     }
-                    if (device) {
-                        setDevices((prevDevices) => [...prevDevices, device]);
-                    }
-                });
+                );
                 subscription.remove();
             }
         }, true);

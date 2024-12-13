@@ -23,9 +23,7 @@ const WelcomeScreen = ({ navigation }) => {
         console.warn('Bluetooth permissions not granted');
       }
     } else if (Platform.OS === 'ios') {
-      const bluetoothResult = await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
-      const locationResult = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
-      
+      navigation.navigate('DeviceList');
       if (bluetoothResult === RESULTS.GRANTED && locationResult === RESULTS.GRANTED) {
         navigation.navigate('DeviceList');
       } else {
@@ -60,7 +58,7 @@ const DeviceListScreen = ({ navigation }) => {
         const minor = device.manufacturerData ? parseInt(device.manufacturerData.substr(22, 4), 16) : null;
 
         // Only process device if major is 80 and minor is 120
-        if (major === 80 && minor === 120) {
+        // if (major === 120 && minor === 80) {
           const distance = calculateDistance(device.rssi);
           const txPower = device.txPowerLevel || -59;
           
@@ -88,7 +86,7 @@ const DeviceListScreen = ({ navigation }) => {
             }
           });
         }
-      }
+      // }
     });
   };
 
